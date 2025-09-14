@@ -1,0 +1,540 @@
+# 1. equals는 일반 규약을 지켜 재정의하라
+
+`equals` 메서드는 재정의하기에 오류를 일으킬 여건이 많아 다음 조건에 해당하면 재정의하지 말아야 한다.
+
+1. 각 인스턴스가 본질적으로 고유한 경우
+2. 인스턴스의 논리적 동치성을 검사할 필요가 없는 경우
+3. 상위 클래스에서 재정의한 `equals` 가 하위 클래스에서 맞지 않을 경우
+4. 클래스가 `priavte` 거나, `package-priavte` 이며, `equals` 메서드를 호출하지 않을 경우
+
+그렇다면 `equals` 를 재정의 해야 하는 경우는 언제일까? 바로 **논리적 동치성을 확인해야 하는데, 상위 클래스의 `equals` 가 논리적 동치성을 비교하도록 재정의하지 않았을 경우**다. 대개 값 클래스인 `Integer` 혹은 `String` 이 이에 해당한다. 
+
+그러나 값 클래스임에도 언제 생성될지 시점이 불분명한 인스턴스 통제 클래스라면 `equals` 를 재정의하지 않는다. 통제 클래스는 논리적으로 2개의 인스턴스가 만들어지지 않는다.
+
+### **1. `equals` 를 재정의할 때 지켜야 할 일반 규약**
+
+그리고 `equals` 를 재정의하기로 결정했다면 반드시 일반 규약을 따라야 한다. 
+
+<aside>
+💡
+
+*Object 명세에 적힌 규약
+
+`equals` 메서드는 동치 관계를 구현하며, 다음을 만족한다.
+
+1. 반사성
+    - `x == x`
+2. 대칭성
+    - `x == y` → `y == x`
+3. 추이성
+    - `x == y` , `y == z` → `x == z`
+4. 반복성
+    - `x == y` 에 항상 true를 반환해야 한다.
+5. null-아님
+    - `x != null`
+</aside>
+
+*여기서 동치관계란, 집합을 서로 같은 원소들로 이뤄진 부분집합으로 나누는 연산이다. 이 부분집합을 동치류(;동치 클래스)라고 한다. 모든 원소가 통치류에 속한 어떤 원소와도 서로 교환할 수 있어야 한다.
+
+> **반사성**
+> 
+- 객체는 자기 자신과 같아야 한다.
+
+> **대칭성**
+> 
+- 두 객체는 서로에 대한 동치 여부에 똑같이 대답해야 한다.
+
+```jsx
+public final class CaseInsensitiveString {
+	private final String s;
+	
+	public CaseInsensitiveString(String s) {
+		this.s = Object.requeireNonNull(s);
+	}
+	
+	@Override public boolean equals(Object o){
+		if (o instanceof CaseInsensitiveString)
+			return s.equalsIgnoreCase( (CaseInsensitiveString) o).s);
+		if (o instanceof String)
+			return s.equalsIsIgnoreCase((String) o);
+		return false;
+	}
+}
+```
+
+`CaseInsensitiveString` 으로 `equals` 로 일반 문자열과 비교를 시도할 경우
+
+```jsx
+CaseInsensitiveString cis = new CaseInsensitiveString("Polish");
+String s = "Polish";
+```
+
+- `cis.equals(s)`  ⇒ true
+- `s.equals(cis)`  ⇒ **false, 대칭성 위반!**
+    - `String` 의 `equals` 는 `CaseInsensitiveString` 의 존재를 모른다.
+
+`CaseInsensitiveString` 로 `contains` 을 호출할 경우
+
+```jsx
+List<CaseInsensitiveString> list = new ArrayList<>();
+list.add(cis);
+```
+
+- `list.contains(s)` ⇒ false 반환
+- OpenJDK 버전이 바뀌거나 다른 JDK에서 true를 반환하거나 런타임 예외를 던질 수 있다.
+
+이에 따라 대칭성 규약을 어기면 해당 객체를 사용하는 객체들이 어떻게 동작할지 우리는 정할 수 없을 것이다.
+
+> **추이성**
+> 
+- 첫번째 객체와 두번째 객체가 같고, 두번째 객체와 세 번째 객체가 같다면, 첫 번째 객체와 세 번째 객체도 같아야 한다.
+- 상위 클래스에 없는 새로운 필드를 하위 클래스에 추가하는 상황
+
+```jsx
+public cass Point {
+	private final int x;
+	private final int y;
+	
+	public Point(int x, int y) {
+		this.x = x;
+		this.y = y;
+	}
+	
+	@Override public boolean equals(Object o){
+		if (!(o instance of Point)) return false;
+		Point p = (Point)o;
+		return p.x == x && p.y == y;
+	}
+}
+
+public class ColorPoint extends Point {
+	private final Color color;
+	
+	public ColorPoint(int x, int y, Color color) {
+		super(x, y);
+		this.color = color;
+	}
+```
+
+여기서 `ColorPoint` 가 `equals` 를 다시 재정의하지 않는다면 색상 정보는 무시된 채 비교가 진행될 것이다.
+
+```jsx
+	@Override public boolean equals(Object o){
+		if (!(o instance of ColorPoint)) return false;
+		return super.equals(o) && ((ColorPoint) o).color == color;
+	}
+```
+
+- `Point` 와 `ColorPoint` 를 바꿔 비교한다면 결과는 달라질 것이다.
+- 즉, `Point` 의 `equals` 를 호출하면 늘 좌표만 비교할 것이고,
+- `ColorPoint` 의 `equals` 를 호출하면 매개변수가 부족해 false를 return할 것이다. (대칭성 깨짐!)
+
+- 이를 해결하기 위해 색상을 무시하게 된다면, 대칭성은 지켜줄 지라도 추이성은 깨져버린다.
+
+```jsx
+ColorPoint p1 = new ColorPoint(1, 2, Color, RED);
+Point p2 = new Point(1, 2);
+ColorPoint p1 = new ColorPoint(1, 2, Color, RED);
+```
+
+- `p1 == p2`  ⇒ TRUE
+- `p2 == p3` ⇒ TRUE
+- `p1 == p3` ⇒ FALSE!!
+
+따라서, 위 두 가지 예시를 미루어 보아 **구체 클래스를 확장해 새로운 값을 추가하는 경우** 규약을 만족시킬 수 없다. 하지만 우회 방법은 존재한다. 상속 대신 컴포지션을 사용하는 것이다. 즉, `Point` 를 상속하는 대신 `Point` 를 `ColorPoint` 의 priavte 필드로 두고 일반 point를 반환하는 뷰 메서드를 public으로 추가하는 것이다. 
+
+```jsx
+public class ColorPoint extends Point {
+	private final Color color;
+	
+	public ColorPoint(int x, int y, Color color) {
+		super(x, y);
+		this.color = color;
+	}
+	
+	**public Point asPoint() { return point; }**
+}
+```
+
+> **일관성**
+> 
+- 두 객체가 같다면 앞으로도 영원히 같아야 한다는 뜻이다.
+- 이 경우 `equals` 의 판단에 신뢰할 수 없는 자원을 사용하면 안된다.
+- 예컨대 `java.net.URL` 는 주어진 URL과 매핑된 IP주소를 비교하는데, 이 IP주소가 네트워크로 받아오며 매번 바뀔 수 있다.
+- 따라서 `equals` 는 항상 결정적인 계산만 수행해야 한다.
+
+### 2. equals를 구현하는 방법
+
+1. == 연산자를 사용해 입력이 자기 자신의 참조인지 확인한다.
+2. instnaceof 연산자로 입력이 올바른 타입인지 확인한다.
+3. 입력을 올바른 타입으로 형변환한다. (2번으로 해결 가능)
+4. 입력 객체와 자기 자신의 대응되는 핵심 필드들이 모두 일치하는지 검사한다.
+
+이외에도
+
+- float와 double을 제외한 기본 타입 필드는 == 연산자로 비교한다.
+- null을 정상값으로 취급한느 참조 타입 필드는 Object.equals로 예외를 방지한다.
+- 비교하기 복잡한 필드의 경우 표준형을 저장해두고 비교한다.
+- 경제적으로 비교하자
+    - 비교 비용이 싼 필드를 먼저 비교
+    - 논리적 상태와 관련 없는 필드는 비교x
+    - 파생 필드를 비교하는 쪽이 더 빠르다면 파생 필드를 비교
+- equals를 구현했다면 단위 테스트를 돌려보자
+- equals를 재정의할 땐 hascode도 반드시 재정의하자.
+- 필드의 동치성만으로도 해결되는 경우 규약이 해결되는 경우가 있음을 생각하자
+- object 외의 타입을 매개변수로 받는 equals 메서드는 선언하지 말자
+
+---
+
+# 2. equals를 재정의하려거든 hashCode도 재정의하라
+
+`equals` 를 재정의한 클래스 모두 `hashcode` 를 재정의 해야 한다. 안 그러면 hashCode의 일반 규약을 어기게 되어 문제를 일으킨다.
+
+### 1. hashCode의 일반 규약
+
+<aside>
+💡
+
+1. hashCode는 항상 일관되게 값을 유지해야 한다.
+2. equals가 두 객체를 같다고 판단했을 경우 hashCode 역시 똑같은 값이어야 한다.
+3. equals가 두 객체를 다르다고 판단했을 경우 꼭 hahCode가 같을 필요는 없다.
+</aside>
+
+### 2. hashCode 규약을 지키지 못했을 경우
+
+- 2번째 규약을 어길 경우 특히 크게 문제가 발생한다.
+- 같은 객체여야 하지만, **서로 다른 버킷에 들어가 버린다.**
+- 따라서 `HashSet.contains()`, `HashMap.get()` 같은 연산이 객체를 찾지 못한다.
+
+### 3. 좋은 해시 코드 작성법
+
+1. int형 변수 result를 선언 후 c로 초기화. (c는 첫번째 필드를 2.a 방식으로 계산한 값)
+2. 해당 객체의 나머지 핵심 필드 f에 대해 다음 작업을 수행함. 
+    1. 해당 필드의 해시코드 c 계산
+        1. 기본 타입이라면, `Type.hashCode(f)` , Type은 기본 타입의 박싱 클래스
+        2. 참조 필드면서 이 클래스의 `equals` 메서드가 이 필드의 `equals` 와 재귀적으로 호출해 비교한다면, 이 팰드의 `hashCode` 를 재귀적으로 호출한다. 복잡한 계산이 예상된다면, 이 필드의 표준형을 만들어 표준형의 `hashCode`를 호출한다. (필드의 값이 null이면 전통적으로 0을 사용한다.)
+        3. 필드가 배열이라면, 핵심 원소 각각을 별도 필드처럼 다룸. 각 핵심 원소의 해시코드르 계산한 뒤 2.b 방식으로 갱신. 
+            - 배열에 핵심코드가 하나도 없으면 단순 상수를 사용.
+            - 모든 원소가 핵심 원소라면 `Arrays.hashCode` 사용
+    2. 2.a에서 계산한 해시코드 c로 result를 갱신한다.
+        
+        ```java
+         result = 31 * result + c;
+        ```
+        
+3. result 반환
+
+*핵심 필드란, equals 비교에 사용되는 필드를 의미함
+
+*해시 함수는 서로 다른 인스턴스들을 32비트 정수 범위에 균일하게 분배해야 한다.
+
+### 4. 잘 작성된 해시 코드인지 확인하기
+
+해시 코드를 작성했다면 동치인 인스턴스에 대해 같은 해시 값을 반환하는지 단위 테스트를 작성해보아야 한다. (`equals`와 `hashCode` 를 AutoValue로 생성했다면 건뛰)
+
+- 파생 필드는 해시코드 계산에서 제외한다.
+    - *파생필드란 다른 필드로부터 계산해 낼 수 있는 필드다.
+- `equals` 비교에 사용되지 않는 필드는 **반드시 제외**한다. 그렇지 않다면, `hasCode` 규약 두 번째를 어기게 된다.
+- 2.b 곱셈 31 * result는 필드를 곱하는 순서에 따라 result 값이 달라지게 한다.
+
+> **전형적이고 제법 훌륭한 예시 - PhoneNumber**
+> 
+
+```java
+@Override public int hashCode() {
+	int result = Short.hadhCode(areaCode);
+	result = 31 * result + Short.hashCode(prefix);
+	result = 31 * result + Short.hashCode(lineNum);
+	return result;
+}
+```
+
+- 비결정적 요소가 없어 동치인 인스턴스는 같은 해시코드를 가진다.
+
+### 5. 해시코드를 작성하는 여러 가지 방법
+
+> **Oject의 hash**
+> 
+
+```java
+@Override public int hashCode() {
+	return Objects.hash(lineNum, prefix, areaCode);
+}}
+```
+
+- Object 클래스는 개수만큼 객체를 받아 해시코드를 계산해주는 함수가 존재함
+- 하지만 PhonNumber의 것보다 속도가 더 느림
+    - 입력 인수를 담기 위한 배열이 만들어진다는 점
+    - 기본 타입 존재 시 박싱과 언박싱을 거쳐야 한다는 점
+
+하지만 클래스가 고정이고, 해시코드 계산 비용이 크면 매번 계산하기 보다 **캐싱**하는 방법을 고려해야 함. 즉, 이 타입의 객체가 자주 해시의 키로 사용될 것 같다는 판단이 서면 해시코드를 계산해 두어야 함.
+
+> **지연 초기화 전략**
+> 
+
+```java
+private int hashCode; // 자동으로 0 초기화
+
+@Override public int hashCode() {
+	int result = hashCode;
+	if (result == 0) {
+		result = Short.hashCode(areaCode);
+		result = 31 * result + Short.hashCode(prefix);
+		result = 31 * result + Short.hashCode(lineNum);
+		return result;
+	}
+	return result;
+}
+```
+
+- hashCode가 처음 불릴 때 계산하는 전략
+- 하지만 스레드의 안정성까지 고려해야 한다.
+
+### 6. 해시 코드 생성 시 주의 점
+
+- 성능을 위해 해시 코드 계산 시 핵심 필드를 생략해서는 안 됨. 이는 해시의 품질을 낯춰 해시테이블 성능을 심각하게 떨어뜨림
+- 해시코드 생성 규칙을 API 사용자에게 자세히 공표해서는 안 됨. 그래야 클라이언트가 이 값에 의지하지 않고 추후 계산 방식을 바꿀 수 있음.
+
+---
+
+# 3. toString을 항상 재정의하라.
+
+`toString` 의 일반 규약은 간결하면서 사람이 읽기 쉬운 형태의 유익한 정보를 반환해야 한다는 것이다.  이를 잘 구현한 클래스는 디버깅하기 쉽다. 왜냐하면 `toString` 을 직접 호출하지 않더라고 `printf` , `ptrinln` , `+` , `assert` 구문에 넘길 때 자동으로 호출되기 때문이다.
+
+### toString 재정의하는 방법
+
+- 해당 객체가 가진 모든 정보를 반환하는 것이 좋다.
+- 반환값의 포맷을 문서화할지 정해야 한다.
+    - 포맷을 명시하면 그 값 그대로 입출력에 사용하거나 csv 파일처럼 사람이 읽을 수 있는 데이터 객체로 저장할 수도 있다.
+    - 이때 명시한 포멧과 맞는 문자열과 객체를 상호 전환할 수 있는 정적 팩터리나 생성자를 함께 제공해주면 굿!
+    - 그러나 포멧을 한번 명시하면 계속 그 포맷을 사용해야 한다. 향후 릴리스에서 포맷을 바꾼다면 이를 사용하던 코드들과 데이터는 엉망이 될 것.
+- 포멧을 사용하든 아니든 의도를 명확히 밝혀야 한다.
+- 포멧을 사용하든 아니든 toString이 반환한 값에 포함된 정보를 얻을 수 있는 API를 제공할 것.
+    - 제공하지 않으면 이 정보가 필요한 toString의 반환값을 파싱해야 함.
+
+---
+
+# 4. `Clone` 재정의는 주의해서 사용하라
+
+`Cloneable` 는 복제해도 되는 클래스라는 것을 명시하는 인터페이스지만, 외부 객체에서 `clone()` 을 호출할 수 없다. 왜나하면 `clone()` 은 `Object` 에서 protected로 선언되어 있기 때문이다. 심지어 접근이 허용된 객체 역시도 `clone()` 을 제공한다는 보장을 해주지도 않는다. 이런 단점에도 불구하고 `Cloneable` 은 널리 쓰이고 있는데, `clone` 을 어떤 식으로 사용해야 해당 메서드를 잘 동작할 수 있는지 알아보기 전에 `Cloneable` 방식을 어떤 식으로 쓰이고 있는지 알아보자.
+
+### 1. Cloneable이란?
+
+`Cloneable` 인터페이스는 `clone()` 의 동작 방식을 결정한다. 
+
+- `Clonable` 을 구현한 클래스의 인스턴스에서 `clone()` 을 호출하면 그 객체의 필드를 하나하나 복사한 객체를 반환하며, 실패 시 `CloneNotSupportedException` 을 던진다.
+- `clone()` 을 사용하려면,
+    1. **`Cloneable` 을 구현해야 햐며,**
+    2. **그 클래스는 `clone()` 을 `public` 으로 재정의해야 한다.**
+- 그러나 상위 클래스에서 `clone` 관련 규약을 강제할 수 없기 때문에, `Cloneable` 은 허술한 프로토콜에 의존하게 된다.
+    - `Clonable` 의 `clone()` 은 복제 가능하다는 표시일 뿐.
+    - 외부에서 `clone()` 을 사용하려면 서브 클래스에서 `public` 으로 재정의 해야 함
+    - `clone()` 을 쓰려면 `super.clone()` 을 직접 호출해야 함.
+    - 깊은 복사, mutable, final, 상속 관계 등 상황에 따라 동작이 다름.
+- 결론적으로 `Cloneable` 사용 시 주의하지 않으면,
+    - 얕은 복사로 인해, 복제된 객체의 변경이 원본 객체에 영향을 줄 수 있다.
+    - 허술한 프로토콜 → 생성자 없이 객체를 생성할 수 있게 된다(;;)
+
+### 2.  `clone()`을 쓰고 싶다면,  `super.clone` 을 호출한다.
+
+```java
+@Override public PhoneNumber clone() {
+	try {
+		return (PhoneNumber) super.clone();
+	} catch (CloneNotSupportedException e) {
+		throw new AssertionError();
+	}
+}
+```
+
+- 이 경우 `PhoneNumber` 에 `Cloneable` 을 구현해야 한다.
+- 이렇게 재정의한 메서드는 상위 클래스의 메서드가 반환하는 타입의 하위 타입일 수 있음.
+- 하지만, 이렇게 복제한 클래스에 **참조된 필드가 있다면,** 원복 혹은 복제본 하나를 수정했을 경우 다른 하나도 수정되어 불변식을 해치게 된다.
+    
+    → 프로그램이 이상하게 돌아가거나, `NullPointerException`
+    
+- 따라서 `clone()` 은 원본 객체에 아무런 해를 끼치지 않는 동시에 복제된 객체의 불변식을 보장해야 한다!
+
+### 3. 복제된 객체의 불변식을 보장하게 하는 법
+
+> **참조 객체를 복제하는 방법**
+> 
+
+참조 객체의 `clone` 을 재귀적으로 호출한다.
+
+```java
+@Override public Stack clone() {
+	try {
+		Stack result = (Stack) super.clone();
+		result.elements = elements.clone(); // Obejct[]로 반환하지 않아도 됨
+		return result;
+	} catch (CloneNotSupportedException e) {
+		thorw new AssertionError();
+	}
+}
+```
+
+- 단, `elements` 가 `final` 이라면 동작하지 않음. `final` 에는 새로운 값을 할당할 수 없음
+    
+    → 가변 객체를 참조하는 필드는 final로 선언하라는 일반 용법과 충돌하기 때문에, 복제할 수 있는 클래스르 만들기 위해 일부 필드에서 final 한정자를 제거해야 할 수도 있음
+    
+- 그러나 이 방식도 참조 체계가 복잡한 자료구조에서 문제가 생긴다. 예를 들어 `HashTable` 의 경우, 단순히 배열을 복사하는 것만으로 내부 연결 리스트까지 복제가 되지 않는다.
+
+> **참조 객체가 배열일 경우 복제하는 방법**
+> 
+
+```java
+@Override public HashTable clone() {
+	try {
+		HashTable result = (HashTable) super.clone();
+		result.buckets = buckets.clone();
+		return result;
+	} catch (CloneNotSupportedException e) {
+		thorw new AssertionError();
+	}
+}
+```
+
+- 이 경우 복제본은 자신만의 버킷 배열을 갖지만, 이 배열은 원본의 연결 리스트를 참조해 원본과 복제본 둘다 예기치 않은 결과를 발생시킬 수 있다. 따라서 각 버킷을 구성하는 연결 리스트를 복제해야 한다.
+
+```java
+public class HashTable implements Clonable {
+	priavte Entry[] buckets = ...;
+	
+	private statc class Entry {
+		final Object key;
+		Object value;
+		Entry next;
+		
+		Entry(...)
+		
+		Entry deepCopy() {
+			return new Entry(key, value,
+				next == null ? null : next.deepCopy());
+		}
+	}
+	
+	@Override public HashTable clone() {
+		try {
+			HashTable result = (HashTable) super.clone();
+			result.buckets = new Entry[buckets.length];
+			for (int i = 0; i < buckets.length; i++) 
+				if (buckets[i] != null)
+					result = 
+			return result;
+		} catch (CloneNotSupportedException e) {
+			thorw new AssertionError();
+		}
+	}
+}
+```
+
+- 이 경우 연결리스트가 그리 길지 않다면 가능. 연결리스트가 너무 길면 다음 방법을 사용하기 권장
+
+```java
+Entry deepCopy() {
+	Entry result = new Entry(key, value, next);
+	for (Entry p = result; p.next != null; p = p.next)
+		p.next = new Entry(p.next.key, p.next.value, p.next.next);
+	return result;
+}
+```
+
+> **복잡한 가변 객체를 안전하게 복제하는 방법**
+> 
+- **`super.clone()` 의 의미**
+    - `super.clone()` 은 얕은 복사를 수행하기 때문에, `HashTable` 과 같은 클래스는 기본 틀만 복제한 뒤 `put` 과 같은 고수준 API를 사용해 내부 상태를 다시 복제한다.
+    - 이 경우, 간단한 코드로 작성할 수 있지만, 저수준에서 처리할 때보다 느려진다.
+    - 따라서 `Cloneable` 은 필드 단위 객체 복사를 우회하기에 전체 아키텍처와는 어울리지 않음.
+- **`clone()` 생성 시 주의 사항**
+    - 생성자에서 재정의될 수 있는 메서드를 호출하면 안 된다. 서브 클래스 상태가 달라짐
+    - 이는 `clone()` 도 마찬가지니까 재정의 가능한 메서드를 호출하지 말아야 함.
+    - 원본과 복제본의 상태가 달라질 가능성이 크기에 `final` 이거나 `private` 여야 함.
+- **예외 처리 시**
+    - `Object.clone()` 은 `CloneNotSupportedException` 을 던지지만 재정의 매서드는 그렇지 않으므로 `public` 의 `clone()` 은 `throw` 절이 없어서 깔끔하게 쓸 수 있음
+- **상속 설계 시**
+    - 어느 방식으로든 상속용 클래스는 `Cloneable` 을 쓰지 말아야 한다. 잘못 복제하면 불변식 깨짐
+    - 이는 `clone()` 을 구현하고 `protected` 로 두는 것과 같음.
+    - 다른 방식으로는 `clone()` 을 동작하게 구현한 뒤 하위 클래스에서 재정의하지 못하게 할 수도 있음.
+    
+    ```java
+    @Override public Object clone() throw CloneNotSupportedException {
+    		thorw new CloneNotSupportedException();
+    }
+    ```
+    
+- **동기화 클래스의 `clone()`**
+    - `Cloneable` 을 구현한 `thread-safe` 클래스 작성 시 `clone` 역시 동기화를 해야 한다.
+
+### 4. 결론 : 왜 복사 생성자/팩터리를 써야 하는가?
+
+위 예시처럼 복잡한 경우는 드물어 대체로 복자 생성자와 복사 팩터리라는 더 나은 객체 복사 방식을 채택한다. 복사 생성자란 자신과 같은 클래스의 인스턴스를 인수로 받는 생성자를 뜻한다.
+
+```java
+public Yum(Yum yum) { ... };
+
+public static Yum newInstance(Yun yum) { ... };
+```
+
+이처럼 복사 생성자와 복사 팩터리를 사용하는 경우 `Cloneable` 방식보다 나은 면이 많다. **(배열을 제외하고선)**
+
+1. 객체 생성 매커니즘을 사용하지 않는다.
+2. 엉성한 프로토콜에 기대지 않는다.
+3. 정상적인 `final` 용법과 충돌하지 않는다.
+4. 불필요한 검사 예외를 던지지 않는다.
+5. 형변환도 필요하지 않는다.
+6. 복사 생성자와 복 팩터리는 해당 클래스가 구현한 인스턴스 타입의 인스턴스를 인수로 받을 수 있다. 예컨대 `HashSet` 을 `TreeSet` 타입으로 복제할 수 있다. 
+
+---
+
+# 5. `Comparable` 을 구현할지 고려하라
+
+`compareTo` 는 단순 동치성 비교에 더해 순서까지 비교할 수 있으며, 제네릭하다. 순서가 있어 손쉽게 정렬도 가능하다. 검색, 극단값 계산, 자동 정렬되는 컬렉션 관리도 쉽다. 
+
+`Comparable` 를 구현하는 수많은 인터페이스를 활용하는 제네릭 알고리즘과 컬렉션을 사용할 수 있으니 순서가 명확하다면 반드시  `Comparable` 을 구현하자!
+
+### 1. `compareTo` 의 일반 규약
+
+<aside>
+💡
+
+1. `x.compare(y) == -y.compare(x)` 
+2. 추이성
+    - `x.compare(y) > 0 && y.compare(z) > 0`  ⇒ `x.compare(z) > 0`
+3. (권고사항) `(x.compare(y) == 0) == (x == y)`
+</aside>
+
+- 단, `equals` 와 다르게 타입이 다른 객체를 신경쓰지 않아도 된다.
+
+> **두 참조 객체 참조의 순서를 바꿔 비교해도 예상한 결과가 나와야 한다.**
+> 
+- 첫 번째 객체가 두 번째 객체보다 작으면,
+- 두 번째 객체도 첫 번째 객체보다 커야 한다.
+
+> **동치성 검사도 `equals` 규약처럼 반사성, 대칭성, 추이성을 만족해야 한다.**
+> 
+- 기존 클래스를 확장한 클래스에 새 값을 추가했다면 `compareTo` 를 지킬 방법 역시 없고,
+- 이를 우회할 방법 역시 독립된 클래스를 만들고 원래 클래스의 인스턴스를 가리키는 필드를 두면 된다.
+
+> **`compareTo` 의 동치성 검사가 `equals` 의 동치성 검사와 같게 나와야 한다. (권장, 필수 x)**
+> 
+- 정렬된 컬렉션은 동치성 비교 시 `equals`  대신  `compareTo` 을 사용한다.
+
+### 2.  `compareTo` 작성법
+
+- **타입을 인수로 받는 제네릭 인터페이스이기에 인수 타입은 컴파일 시기에 정해진다.**
+    - 이에 따라 타입을 확인하거나 형변환할 필요가 없다.
+- **null 인수로 넣어 호출 시 `NullPointerException` 을 던져야 한다.**
+- **`compareTo` 은 동치를 비교하는 것이 아니라 순서를 비교한다.**
+    - 따라서 객체 참조 필드를 비교하려면  `compareTo` 을 재귀적으로 호출한다.
+    - `Compare` 을 구현하지 않은 필드나 표준이 아닌 순서로 비교한다면 `Comparator` 을 사용한다.
+    - (Java 7) 정수 기본 타입 필드를 비교할 때, 박싱된 기본 타입 클래스의 새 정적 메서드인 `compare` 을 사용한다.
+- **비교하는 법**
+    - 가장 핵심적인 필드부터 비교한다. 여기서 결과가 정해진다면 바로 반환한다.
+    - 그다음으로 중요한 필드를 비교한다.
+    - (Java 8) `Comparator` 인터페이스가 비교 생성 메서드를 통해 메서드 연쇄 방식으로 비교자를 생성할 수 있게 되었다. ⇒ 약간의 성능 저하!
+    - 객체 참조용 비교 시 객체 참조용 비교자 생성 메서드인 `comparing` 을 사용한다.
+        1. 키 추출자를 받아 해당 키의 자연적 순서를 사용
+        2. 키 추출자 하나와 추출된 키를 비교자까지 총 2개의 인수를 받음
+    1. `thenComparing` 이라는 메서드로, 첫 번째는 비교자 하나로 순서를 정하고, 두 번째는 키 추출자르 인수로 받아 보조 순서를 정하고, 마지막으로 키 추출자 하나와 추출된 키를 비교할 비교자까지 2개의 인수를 받는다.
+    - 값의 차를 기준으로 `compare` 을 구현하지 마라
